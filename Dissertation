@@ -1,0 +1,81 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import odeint
+
+# ========== MODEL PARAMETERS ==========
+# 1. Parkinson's Parameter (0=healthy, 1=severe PD)
+pd_deficit = 0.7  # e.g., 70% loss of baseline dopaminergic drive
+
+# 2. Circadian Rhythm Strength (how much the clock affects dopamine)
+circadian_strength = 0.2  # Adjust to see stronger/weaker effects
+
+# ========== THE INTEGRATED MODEL ==========
+def parkinsons_circadian_model(state, t):
+    """
+    Integrated FHN neuron under circadian & Parkinson's influence.
+    state = [v, w] where v is membrane potential, w is recovery variable.
+    t is time in hours.
+    """
+    v, w = state
+    
+    # A. Define the Circadian Signal (based on paper's findings)
+    # This simple sine wave represents the 24h oscillation in TH/MAO levels.
+    # Peaks during the active phase (night for rodents, day for humans).
+    period = 24.0  # 24-hour cycle
+    # Circadian signal oscillates around 1.0
+    circadian_signal = 1.0 + np.sin(2 * np.pi * t / period)
+    
+    # B. Define the Total External Current (I_ext)
+    # 1. Healthy baseline current
+    I_healthy = 0.5
+    # 2. Parkinson's reduces the baseline permanently
+    I_baseline_pd = I_healthy * (1 - pd_deficit)
+    # 3. The circadian rhythm modulates this reduced baseline
+    I_ext = I_baseline_pd + circadian_strength * circadian_signal
+    
+    # C. Standard FHN Equations (with our modulated I_ext)
+    a, b, epsilon = 0.7, 0.8, 0.08  # Standard FHN parameters
+    
+    dv_dt = v - (v**3)/3 - w + I_ext
+    dw_dt = epsilon * (v + a - b * w)
+    
+    return [dv_dt, dw_dt]
+
+# ========== SIMULATION ==========
+# Simulate for 4 days to see circadian patterns
+t = np.linspace(0, 96, 4000)  # 96 hours = 4 days, high resolution
+initial_state = [0.1, 0.1]
+
+solution = odeint(parkinsons_circadian_model, initial_state, t)
+v = solution[:, 0]  # Membrane potential over time
+
+# ========== VISUALIZE ==========
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+
+# Plot 1: Neuronal Activity (Membrane Potential v)
+ax1.plot(t, v, 'b-', linewidth=0.5, alpha=0.7)
+ax1.set_ylabel('Membrane Potential (v)', fontsize=12)
+ax1.set_title(f'Dopamine Neuron Activity | PD Deficit={pd_deficit}', fontsize=14)
+ax1.grid(True, alpha=0.3)
+# Add day/night shading
+for day in range(0, 4):
+    ax1.axvspan(12 + 24*day, 24 + 24*day, alpha=0.1, color='gray', label='Active Phase' if day==0 else "")
+
+# Plot 2: The Underlying Drivers
+# Re-calculate I_ext for plotting
+I_healthy = 0.5
+I_baseline_pd = I_healthy * (1 - pd_deficit)
+circadian_signal_plot = 1.0 + np.sin(2 * np.pi * t / 24)
+I_ext_plot = I_baseline_pd + circadian_strength * circadian_signal_plot
+
+ax2.plot(t, I_ext_plot, 'r-', label='Total Drive (I_ext)', linewidth=2)
+ax2.axhline(y=I_healthy, color='g', linestyle='--', label='Healthy Baseline', alpha=0.7)
+ax2.axhline(y=I_baseline_pd, color='k', linestyle='--', label='PD Baseline', alpha=0.7)
+ax2.set_xlabel('Time (hours)', fontsize=12)
+ax2.set_ylabel('Current / Drive', fontsize=12)
+ax2.set_title('Underlying Drivers: PD Baseline + Circadian Rhythm', fontsize=14)
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
